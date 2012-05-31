@@ -14,6 +14,11 @@ if (Ti.version < 1.8 ) {
 	alert('Sorry - this application template requires Titanium Mobile SDK 1.8 or later');	  	
 }
 
+
+/* 
+ * PARSE SAMPLE CODE
+ * from: https://parse.com/apps/quickstart?rf=js#js/blank
+ */
 var _ = require('/lib/underscore');
 require('/lib/ti.parse');
 
@@ -25,6 +30,7 @@ testObject.save({foo: "bar"}, {
     alert("yay! it worked");
   }
 });
+//-----END PARSE SAMPLE CODE------//
 
 // This is a single context application with mutliple windows in a stack
 (function() {
