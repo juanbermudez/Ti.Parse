@@ -2,6 +2,9 @@
 Included in this sample app a lib folder with underscore.js and modified Parse JS SDK.  
 Still needs testing, but initial demo worked XP. 
 
+Modified Parse SDK is  under Resources/lib/ti.parse.js
+Sample code is at Resources/app.js
+
 ---------------------------------
 
 Welcome to your Appcelerator Titanium Mobile Project
