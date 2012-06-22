@@ -4,8 +4,8 @@
  */
 var _ = require('lib/underscore');
 require('lib/ti.parse');
-
-Parse.initialize("kmqAG45Quhp8DX2lTMK0Pa70nUOTEncfPnVwuq0R", "4l3NO63UAsNkssxMt5uVYF7paIsZckWy5hIDFkVR");
+//Get your  Keys here: https://www.parse.com/apps/quickstart#js/blank
+Parse.initialize("XXXXXX", "XXXXXXXX");
 
 
 var loginWin = Ti.UI.createWindow({
@@ -117,13 +117,7 @@ function init(){
 	    window:win2
 	});
 	
-	var label2 = Titanium.UI.createLabel({
-		color:'#999',
-		text:'I am Window 2',
-		font:{fontSize:20,fontFamily:'Helvetica Neue'},
-		textAlign:'center',
-		width:'auto'
-	});
+	
 	
 	win2.add(label2);
 	

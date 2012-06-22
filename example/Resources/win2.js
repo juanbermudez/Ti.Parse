@@ -4,7 +4,7 @@ win.backgroundColor = '#ff0000';
 var _ = require('lib/underscore');
 require('lib/ti.parse');
 
-Parse.initialize("kmqAG45Quhp8DX2lTMK0Pa70nUOTEncfPnVwuq0R", "4l3NO63UAsNkssxMt5uVYF7paIsZckWy5hIDFkVR");
+Parse.initialize("XXXXXXX", "XXXXXXXXX");
 
 
 //Doing the same thinkg in a different context, using
