@@ -1,1 +1,0 @@
-/Users/Juan/Work/Titanium Apps/Ti.Parse/Resources/ui/tablet/ApplicationWindow.js
