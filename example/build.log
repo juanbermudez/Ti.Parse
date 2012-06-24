@@ -1,25 +1,11 @@
 Logfile initialized
 [INFO] logfile = /Users/Juan/Work/Titanium Apps/Ti.Parse/example/build.log
-[DEBUG] /Users/Juan/Library/Application Support/Titanium/mobilesdk/osx/2.0.2.GA/android/builder.py simulator Ti.Parse /Users/Juan/Work/_Tools/android-sdk /Users/Juan/Work/Titanium Apps/Ti.Parse/example com.jbermudez5.com 12 WVGA854 
-[INFO] Building Ti.Parse for Android ... one moment
-[INFO] Titanium SDK version: 2.0.2 (05/30/12 10:21 2ff31a3)
-[DEBUG] Waiting for device to be ready ...
-[TRACE] adb devices returned 1 devices/emulators
-[DEBUG] Device connected... (waited 0 seconds)
-[DEBUG] waited 0.023512 seconds on emulator to get ready
-[DEBUG] com.jbermudez5.com installed? False
-[INFO] Fastdev server running, deploying in Fastdev mode
-[INFO] Copying CommonJS modules...
-[INFO] Copying project resources..
-[ERROR] Exception occured while building Android project:
-[ERROR] Traceback (most recent call last):
-[ERROR]   File "/Users/Juan/Library/Application Support/Titanium/mobilesdk/osx/2.0.2.GA/android/builder.py", line 2119, in <module>
-[ERROR]     s.build_and_run(False, avd_id, debugger_host=debugger_host)
-[ERROR]   File "/Users/Juan/Library/Application Support/Titanium/mobilesdk/osx/2.0.2.GA/android/builder.py", line 1840, in build_and_run
-[ERROR]     self.copy_project_resources()
-[ERROR]   File "/Users/Juan/Library/Application Support/Titanium/mobilesdk/osx/2.0.2.GA/android/builder.py", line 648, in copy_project_resources
-[ERROR]     self.project_deltafy = Deltafy(resources_dir, include_callback=self.include_path)
-[ERROR]   File "/Users/Juan/Library/Application Support/Titanium/mobilesdk/osx/2.0.2.GA/android/deltafy.py", line 108, in __init__
-[ERROR]     self.conn.execute('create table if not exists timestamps (path text, modified timestamp)')
-[ERROR] DatabaseError: database disk image is malformed
+[DEBUG] /Users/Juan/Library/Application Support/Titanium/mobilesdk/osx/2.0.2.GA/android/builder.py emulator Ti.Parse /Users/Juan/Work/_Tools/android-sdk /Users/Juan/Work/Titanium Apps/Ti.Parse/example com.jbermudez5.com 12 WVGA854
+[INFO] Launching Android emulator...one moment
+[DEBUG] From: /Users/Juan/Work/_Tools/android-sdk/tools/emulator
+[DEBUG] SDCard: /Users/Juan/.titanium/android2.sdcard
+[DEBUG] AVD ID: 12
+[DEBUG] AVD Skin: WVGA854
+[DEBUG] SDK: /Users/Juan/Work/_Tools/android-sdk
+[DEBUG] /Users/Juan/Work/_Tools/android-sdk/tools/emulator -avd titanium_12_WVGA854 -port 5560 -sdcard /Users/Juan/.titanium/titanium_12_WVGA854.sdcard -logcat *:d,* -no-boot-anim -partition-size 128
 [INFO] Android Emulator has exited

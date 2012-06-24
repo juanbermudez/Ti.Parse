@@ -1274,7 +1274,7 @@
       return Parse._ajaxIE8(method, url, data, success, error);
     }
 
-    var xhr = new XMLHttpRequest();
+    var xhr = Titanium.Network.createHTTPClient();
     xhr.onreadystatechange = function() {
       if (xhr.readyState === 4) {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -4491,7 +4491,7 @@
       }
       Parse.User._currentUserMatchesDisk = true;
       Parse.User._currentUser = null;
-      localStorage.removeItem(
+      Ti.App.Properties.removeProperty(
           Parse._getParsePath(Parse.User._CURRENT_USER_KEY));
     },
 
@@ -4530,7 +4530,7 @@
       // Load the user from local storage.
       Parse.User._currentUserMatchesDisk = true;
 
-      var userData = localStorage.getItem(Parse._getParsePath(
+      var userData = Ti.App.Properties.getString(Parse._getParsePath(
           Parse.User._CURRENT_USER_KEY));
       if (!userData) {
         
