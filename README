@@ -1,6 +1,6 @@
 @jbermudez5:
 
-This is a first impelemntation of the Parse JavaScript SDK in Titanium. 
+This is a first implementation of the Parse JavaScript SDK in Titanium. 
 There is an example app based off the default Titanium Mobile project that logs in a user and 
 retrieves basic data from the local storage.  Pushing an object to Parse also worked.
 
