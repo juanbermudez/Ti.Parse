@@ -1217,7 +1217,7 @@
         hexOctet() + "-" +
         hexOctet() + "-" +
         hexOctet() + hexOctet() + hexOctet());
-      localStorage.setItem(path, Parse._installationId);
+      Ti.App.Properties.setString(path, Parse._installationId);
     }
 
     return Parse._installationId;
@@ -4371,6 +4371,7 @@
         authData[authType] = options.authData;
         this.set('authData', authData);
         
+        
         // Overridden so that the user can be made the current user.
         var newOptions = _.clone(options);
         newOptions.success = function(model) {
@@ -4719,7 +4720,7 @@
       }
       Parse.User._currentUserMatchesDisk = true;
       Parse.User._currentUser = null;
-      localStorage.removeItem(
+      Ti.App.Properties.removeProperty(
           Parse._getParsePath(Parse.User._CURRENT_USER_KEY));
     },
 
@@ -4794,7 +4795,7 @@
       var json = user.toJSON();
       json._id = user.id;
       json._sessionToken = user._sessionToken;
-      localStorage.setItem(
+      Ti.App.Properties.setString(
           Parse._getParsePath(Parse.User._CURRENT_USER_KEY),
           JSON.stringify(json));
     },
@@ -5426,7 +5427,30 @@
   var provider = {
     authenticate: function(options) {
       var self = this;
-      FB.login(function(response) {
+      Ti.Facebook.authorize();
+      
+      Ti.Facebook.addEventListener('login', function(response) {
+        
+        if (response.success) 
+        {     
+          if (options.success) 
+          {           
+              options.success(self, {
+                id: response.data.id,
+                access_token: Ti.Facebook.accessToken,
+                expiration_date: Ti.Facebook.expirationDate
+              });
+              
+            }
+        } else {
+          if (options.error) {
+            options.error(self, response);
+          }
+        }
+      });
+      
+      
+      /* FB.login(function(response) {
         if (response.authResponse) {
           if (options.success) {
             options.success(self, {
@@ -5443,7 +5467,7 @@
         }
       }, {
         scope: requestedPermissions
-      });
+      }); */
     },
     restoreAuthentication: function(authData) {
       var authResponse;
@@ -5461,9 +5485,9 @@
           expiresIn: null
         };
       }
-      FB.Auth.setAuthResponse(authResponse);
+      //FB.Auth.setAuthResponse(authResponse);
       if (!authData) {
-        FB.logout();
+        Ti.Facebook.logout();
       }
       return true;
     },
@@ -5495,10 +5519,10 @@
      *   FB.init()</a>
      */
     init: function(options) {
-      if (typeof(FB) === 'undefined') {
+     /* if (typeof(FB) === 'undefined') {
         throw "The Javascript Facebook SDK must be loaded before calling init.";
       }
-      FB.init(options);
+      FB.init(options); */
       Parse.User._registerAuthenticationProvider(provider);
       initialized = true;
     },
@@ -5529,7 +5553,8 @@
       if (!initialized) {
         throw "You must initialize FacebookUtils before calling logIn.";
       }
-      requestedPermissions = permissions;
+      Ti.Facebook.permissions = permissions;
+      // requestedPermissions = permissions;
       return Parse.User._logInWith("facebook", options);
     },
     
