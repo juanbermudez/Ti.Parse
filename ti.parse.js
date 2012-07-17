@@ -1,7 +1,7 @@
 /*!
  * Parse JavaScript SDK
- * Version: 1.0.5
- * Built: Mon Jun 18 2012 16:16:39
+ * Version: 1.0.8
+ * Built: Mon Jul 09 2012 15:57:07
  * http://parse.com
  *
  * Copyright 2012 Parse, Inc.
@@ -13,7 +13,7 @@
  */
 (function(root) {
   root.Parse = root.Parse || {};
-  root.Parse.VERSION = "1.0.5";
+  root.Parse.VERSION = "1.0.8";
 }(this));
 
 
@@ -1401,7 +1401,7 @@
     if (!_.isObject(value)) {
       return value;
     } else if (_.isArray(value)) {
-      _.each(value, function(v, k) {
+      Parse._each(value, function(v, k) {
         value[k] = Parse._decode(k, v);
       });
       return value;
@@ -1410,10 +1410,22 @@
     } else if (value.objectId) {
       // Must be a Pointer or a JSON Parse Object.
       if (value.__type === "Pointer") {
-        return Parse.Object._create(value.className,
-                                    {objectId: value.objectId});
+        var pointer = Parse.Object._create(value.className,
+                                           {objectId: value.objectId});
+        pointer._refreshCache();
+        pointer._dirty = {};
+        return pointer;
+      } else if (value.__type === "Object") {
+        // It's an Object included in a query result.
+        var className = value.className;
+        delete value.__type;
+        delete value.className;
+        var object = Parse.Object._create(className, value);
+        object._refreshCache();
+        object._dirty = {};
+        return object;
       } else {
-        _.each(value, function(val, key) {
+        Parse._each(value, function(val, key) {
           value[key] = Parse._decode(key, val);
         });
         return Parse.Object._create(value.className, value);
@@ -1438,6 +1450,22 @@
     } else {
       // Just some random JSON object.
       return value;
+    }
+  };
+
+  /**
+   * This is like _.each, except:
+   * * it doesn't work for so-called array-like objects,
+   * * it does work for dictionaries with a "length" attribute.
+   */
+  Parse._each = function(obj, callback) {
+    var _ = Parse._;
+    if (_.isObject(obj)) {
+      _.each(_.keys(obj), function(key) {
+        callback(obj[key], key);
+      });
+    } else {
+      _.each(obj, callback);
     }
   };
 
@@ -2206,12 +2234,12 @@
         if (_.isFunction(arg1)) {
           throw "Parse.ACL() called with a function.  Did you forget ()?";
         }
-        _.each(arg1, function(accessList, userId) {
+        Parse._each(arg1, function(accessList, userId) {
           if (!_.isString(userId)) {
             throw "Tried to create an ACL with an invalid userId.";
           }
           self.permissionsById[userId] = {};
-          _.each(accessList, function(allowed, permission) {
+          Parse._each(accessList, function(allowed, permission) {
             if (permission !== "read" && permission !== "write") {
               throw "Tried to create an ACL with an invalid permission type.";
             }
@@ -2493,6 +2521,7 @@
       this.collection = options.collection;
     }
     this.attributes = {};  // The actual data for the Parse Object.
+    this._operations = {};  // Operations such as increment and unset.
     this._dirty = {};  // The keys in the object that haven't been saved.
     this._hashedJSON = {};  // Hash of values of containers at last save.
     this._escapedAttributes = {};
@@ -2590,6 +2619,8 @@
   // Attach all inheritable methods to the Parse.Object prototype.
   _.extend(Parse.Object.prototype, Parse.Events,
            /** @lends Parse.Object.prototype */ {
+           
+    _existed: false,
 
     /**
      * Initialize is an empty function by default. Override it with your own
@@ -2606,8 +2637,11 @@
       _.each(["createdAt", "objectId", "updatedAt"], function(key) {
         delete json[key];
       });
-      _.each(json, function(val, key) {
+      Parse._each(json, function(val, key) {
         json[key] = Parse._encode(val);
+      });
+      Parse._each(this._operations, function(val, key) {
+        json[key] = val;
       });
       return json;
     },
@@ -2618,7 +2652,7 @@
      */
     _refreshCache: function() {
       var self = this;
-      _.each(this.attributes, function(value, key) {
+      Parse._each(this.attributes, function(value, key) {
         if (value instanceof Parse.Object) {
           value._refreshCache();
         } else if (_.isObject(value)) {
@@ -2647,11 +2681,11 @@
      */
     dirty: function(attr) {
       this._refreshCache();
-      if (!this.id) {
-        return true;
-      }
       if (attr) {
         return (this._dirty[attr] ? true : false);
+      }
+      if (!this.id) {
+        return true;
       }
       if (_.keys(this._dirty).length > 0) {
         return true;
@@ -2750,7 +2784,7 @@
       if (op.__op === 'Batch') {
         var self = this;
         var success = true;
-        _.each(op.ops, function(subOp) {
+        Parse._each(op.ops, function(subOp) {
           success = success && self._handleSetOp(key, subOp);
         });
       } else if (op.__op === 'Increment') {
@@ -2810,7 +2844,7 @@
       var attrs, attr;
       if (_.isObject(key) || isNullOrUndefined(key)) {
         attrs = key;
-        _.each(attrs, function(v, k) {
+        Parse._each(attrs, function(v, k) {
           attrs[k] = Parse._decode(k, v);
         });
         options = value;
@@ -2829,7 +2863,7 @@
         attrs = attrs.attributes;
       }
       if (options.unset) {
-        _.each(attrs, function(unused_value, attr) {
+        Parse._each(attrs, function(unused_value, attr) {
           attrs[attr] = undefined;
         });
       }
@@ -2850,7 +2884,7 @@
 
       // Update attributes.
       var self = this;
-      _.each(_.keys(attrs), function(attr) {
+      Parse._each(_.keys(attrs), function(attr) {
         var val = attrs[attr];
 
         // If this is a relation object we need to set the parent correctly,
@@ -2870,9 +2904,15 @@
           if (options.unset) {
             delete now[attr];
             self._dirty[attr] = true;
+            self._operations[attr] = { __op: 'Delete' };
           } else {
             now[attr] = val;
             self._dirty[attr] = true;
+            // If this field was previously scheduled for deletion, undo that.
+            if (_.isObject(self._operations[attr]) &&
+                self._operations[attr].__op === 'Delete') {
+              delete self._operations[attr];
+            }
           }
         }
         if (self._changing && !_.isEqual(self._changed[attr], val)) {
@@ -2916,7 +2956,8 @@
     clear: function(options) {
       options = options || {};
       options.unset = true;
-      return this.set(_.clone(this.attributes), options);
+      var keysToClear = _.extend(this.attributes, this._operations);
+      return this.set(keysToClear, options);
     },
 
     /**
@@ -2929,7 +2970,7 @@
       var model = this;
       var success = options.success;
       options.success = function(resp, status, xhr) {
-        if (!model.set(model.parse(resp, xhr), options)) {
+        if (!model.set(model.parse(resp, status, xhr), options)) {
           return false;
         }
         if (success) {
@@ -3042,10 +3083,11 @@
 
       // Record what was saved, so we can update dirty fields correctly.
       var savedData = _.clone(model.attributes);
+      var savedOperations = _.clone(model._operations);
 
       /** ignore */
       newOptions.success = function(resp, status, xhr) {
-        var serverAttrs = model.parse(resp, xhr);
+        var serverAttrs = model.parse(resp, status, xhr);
         if (newOptions.wait) {
           serverAttrs = _.extend(attrs || {}, serverAttrs);
         }
@@ -3054,7 +3096,7 @@
         }
 
         var keys = _.keys(model.attributes);
-        _.each(model.attributes, function(child, key) {
+        Parse._each(model.attributes, function(child, key) {
           if (child instanceof Parse.Relation) {
             child._clearUpdates();
           }
@@ -3062,11 +3104,13 @@
 
         if (oldOptions.success) {
           model._refreshCache();
-          _.each(savedData, function(savedValue, savedKey) {
+          Parse._each(savedData, function(savedValue, savedKey) {
             if (savedValue === model.get(savedKey)) {
-              var dirty = model._dirty;
-              delete dirty[savedKey];
+              delete model._dirty[savedKey];
             }
+          });
+          Parse._each(savedOperations, function(unusedValue, savedKey) {
+            delete model._dirty[savedKey];
           });
           oldOptions.success(model, resp);
         } else {
@@ -3080,7 +3124,7 @@
       var json = this.toJSON();
       // Remove fields that aren't dirty.
       model._refreshCache();
-      _.each(json, function(value, key) {
+      Parse._each(json, function(value, key) {
         if (!model._dirty[key]) {
           delete json[key];
         }
@@ -3143,7 +3187,7 @@
      * Converts a response into the hash of attributes to be set on the model.
      * @ignore
      */
-    parse: function(resp, xhr) {
+    parse: function(resp, status, xhr) {
       var output = _.clone(resp);
       _(["createdAt", "updatedAt"]).each(function(key) {
         if (output[key]) {
@@ -3152,6 +3196,9 @@
       });
       if (!output.updatedAt) {
         output.updatedAt = output.createdAt;
+      }
+      if (status) {
+        this._existed = (status.status !== 201);
       }
       return output;
     },
@@ -3171,6 +3218,15 @@
     isNew: function() {
       return !this.id;
     },
+    
+    /**
+     * Returns true if this object was created by the Parse server when the
+     * object might have already been there (e.g. in the case of a Facebook
+     * login)
+     */
+    existed: function() {
+      return this._existed;
+    },
 
     /**
      * Call this method to manually fire a <code>"change"</code> event for this
@@ -3185,7 +3241,7 @@
       }
       this._changing = true;
       this._moreChanges = true;
-      _.each(this._changed, function(value, attr) {
+      Parse._each(this._changed, function(value, attr) {
         self.trigger('change:' + attr, self, value, options);
       });
       while (this._moreChanges) {
@@ -3226,7 +3282,7 @@
       }
       var changed = {};
       var old = this._previousAttributes;
-      _.each(diff, function(diffVal, attr) {
+      Parse._each(diff, function(diffVal, attr) {
         if (!_.isEqual(old[attr], diffVal)) {
           changed[attr] = diffVal;
         }
@@ -4117,7 +4173,7 @@
       }
       this.undelegateEvents();
       var self = this;
-      _.each(events, function(method, key) {
+      Parse._each(events, function(method, key) {
         if (!_.isFunction(method)) {
           method = self[events[key]];
         }
@@ -4228,8 +4284,66 @@
       }
       Parse.User.__super__._mergeMagicFields.call(this, attrs);
     },
+    
+    /**
+     * Removes null values from authData (which exist temporarily for
+     * unlinking)
+     */
+    _cleanupAuthData: function() {
+      var authData = this.get('authData');
+      if (!authData) {
+        return;
+      }
+      _.each(this.get('authData'), function(value, key) {
+        if (!authData[key]) {
+          delete authData[key];
+        }
+      });
+      var dirty = this._dirty;
+      delete dirty.authData;
+    },
+    
+    /**
+     * Synchronizes authData for all providers.
+     */
+    _synchronizeAllAuthData: function() {
+      var authData = this.get('authData');
+      if (!authData) {
+        return;
+      }
+      
+      var self = this;
+      _.each(this.get('authData'), function(value, key) {
+        self._synchronizeAuthData(key);
+      });
+    },
+    
+    /**
+     * Synchronizes auth data for a provider (e.g. puts the access token in the
+     * right place to be used by the Facebook SDK).
+     */
+    _synchronizeAuthData: function(provider) {
+      var authType;
+      if (_.isString(provider)) {
+        authType = provider;
+        provider = Parse.User._authProviders[authType];
+      } else {
+        authType = provider.getAuthType();
+      }
+      var authData = this.get('authData');
+      if (!authData || !provider) {
+        return;
+      }
+      var success = provider.restoreAuthentication(authData[authType]);
+      if (!success) {
+        this._unlinkFrom(provider);
+      }
+    },
 
     _handleSaveResult: function(makeCurrent) {
+      // Clean up and synchronize the authData object, removing any unset values
+      this._cleanupAuthData();
+      this._synchronizeAllAuthData();
       // Don't keep the password around.
       this.unset("password");
       var dirty = this._dirty;
@@ -4237,6 +4351,116 @@
       this._refreshCache();
       if (makeCurrent || this.isCurrent()) {
         Parse.User._saveCurrentUser(this);
+      }
+    },
+    
+    /**
+     * Unlike in the Android/iOS SDKs, logInWith is unnecessary, since you can
+     * call linkWith on the user (even if it doesn't exist yet on the server).
+     */
+    _linkWith: function(provider, options) {
+      var authType;
+      if (_.isString(provider)) {
+        authType = provider;
+        provider = Parse.User._authProviders[provider];
+      } else {
+        authType = provider.getAuthType();
+      }
+      if (_.has(options, 'authData')) {
+        var authData = this.get('authData') || {};
+        authData[authType] = options.authData;
+        this.set('authData', authData);
+        
+        
+        // Overridden so that the user can be made the current user.
+        var newOptions = _.clone(options);
+        newOptions.success = function(model) {
+          model._handleSaveResult(true);
+          if (options.success) {
+            options.success.apply(this, arguments);
+          }
+        };
+        return this.save({'authData': authData}, newOptions);
+      } else {
+        var self = this;
+        return provider.authenticate({
+          success: function(provider, result) {
+            self._linkWith(provider, {
+              authData: result,
+              success: options.success,
+              error: options.error
+            });
+          },
+          error: function(provider, error) {
+            if (options.error) {
+              options.error(self, error);
+            }
+          }
+        });
+      }
+    },
+    
+    /**
+     * Unlinks a user from a service.
+     */
+    _unlinkFrom: function(provider, options) {
+      var authType;
+      if (_.isString(provider)) {
+        authType = provider;
+        provider = Parse.User._authProviders[provider];
+      } else {
+        authType = provider.getAuthType();
+      }
+      var newOptions = _.clone(options);
+      var self = this;
+      newOptions.authData = null;
+      newOptions.success = function(model) {
+        self._synchronizeAuthData(provider);
+        if (options.success) {
+          options.success.apply(this, arguments);
+        }
+      };
+      return this._linkWith(provider, newOptions);
+    },
+    
+    /**
+     * Checks whether a user is linked to a service.
+     */
+    _isLinked: function(provider) {
+      var authType;
+      if (_.isString(provider)) {
+        authType = provider;
+      } else {
+        authType = provider.getAuthType();
+      }
+      var authData = this.get('authData') || {};
+      return !!authData[authType];
+    },
+    
+    /**
+     * Deauthenticates all providers.
+     */
+    _logOutWithAll: function() {
+      var authData = this.get('authData');
+      if (!authData) {
+        return;
+      }
+      var self = this;
+      _.each(this.get('authData'), function(value, key) {
+        self._logOutWith(key);
+      });
+    },
+    
+    /**
+     * Deauthenticates a single provider (e.g. removing access tokens from the
+     * Facebook SDK).
+     */
+    _logOutWith: function(provider) {
+      if (_.isString(provider)) {
+        provider = Parse.User._authProviders[provider];
+      }
+      if (provider && provider.deauthenticate) {
+        provider.deauthenticate();
       }
     },
 
@@ -4280,6 +4504,7 @@
         return false;
       }
 
+      // Overridden so that the user can be made the current user.
       var newOptions = _.clone(options);
       newOptions.success = function(model) {
         model._handleSaveResult(true);
@@ -4306,7 +4531,7 @@
       var model = this;
       var newOptions = _.clone(options);
       newOptions.success = function(resp, status, xhr) {
-        var serverAttrs = model.parse(resp, xhr);
+        var serverAttrs = model.parse(resp, status, xhr);
         if (!model.set(serverAttrs, newOptions)) {
           return false;
         }
@@ -4432,6 +4657,9 @@
 
     // The localStorage key suffix that the current user is stored under.
     _CURRENT_USER_KEY: "currentUser",
+    
+    // The mapping of auth provider names to actual providers
+    _authProviders: {},
 
 
     // Class Methods
@@ -4488,6 +4716,7 @@
     logOut: function() {
       if (Parse.User._currentUser !== null) {
         Parse.User._currentUser._isCurrentUser = false;
+        Parse.User._currentUser._logOutWithAll();
       }
       Parse.User._currentUserMatchesDisk = true;
       Parse.User._currentUser = null;
@@ -4546,6 +4775,7 @@
       delete json._sessionToken;
       Parse.User._currentUser.set(json);
 
+      Parse.User._currentUser._synchronizeAllAuthData();
       Parse.User._currentUser._refreshCache();
       Parse.User._currentUser._dirty = {};
       return Parse.User._currentUser;
@@ -4568,6 +4798,19 @@
       Ti.App.Properties.setString(
           Parse._getParsePath(Parse.User._CURRENT_USER_KEY),
           JSON.stringify(json));
+    },
+    
+    _registerAuthenticationProvider: function(provider) {
+      Parse.User._authProviders[provider.getAuthType()] = provider;
+      // Synchronize the current user with the auth provider.
+      if (Parse.User.current()) {
+        Parse.User.current()._synchronizeAuthData(provider.getAuthType());
+      }
+    },
+    
+    _logInWith: function(provider, options) {
+      var user = new Parse.User();
+      return user._linkWith(provider, options);
     }
 
   });
@@ -4909,6 +5152,19 @@
     },
 
     /**
+     * Add a constraint to the query that requires a particular key's value to
+     * not be contained in the provided list of values.
+     * @param {String} key The key to check.
+     * @param {Array} values The values that will not match.
+     * @return {Parse.Query} Returns the query, so you can chain this call.
+     */
+    notContainedIn: function(key, values) {
+      this._addCondition(key, "$nin", values);
+      return this;
+    },
+
+
+    /**
      * Add a constraint for finding objects that contain the given key.
      * @param {String} key The key that should exist.
      * @return {Parse.Query} Returns the query, so you can chain this call.
@@ -5071,7 +5327,7 @@
      * Add a proximity based constraint for finding objects with key point
      * values near the point given.
      * @param {String} key The key that the Parse.GeoPoint is stored in.
-     * @param {Parse.GeoPint} point The reference Parse.GeoPoint that is used.
+     * @param {Parse.GeoPoint} point The reference Parse.GeoPoint that is used.
      * @return {Parse.Query} Returns the query, so you can chain this call.
      */
     near: function(key, point) {
@@ -5087,7 +5343,7 @@
      * Add a proximity based constraint for finding objects with key point
      * values near the point given and within the maximum distance given.
      * @param {String} key The key that the Parse.GeoPoint is stored in.
-     * @param {Parse.GeoPint} point The reference Parse.GeoPoint that is used.
+     * @param {Parse.GeoPoint} point The reference Parse.GeoPoint that is used.
      * @param maxDistance Maximum distance (in radians) of results to return.
      * @return {Parse.Query} Returns the query, so you can chain this call.
      */
@@ -5102,7 +5358,7 @@
      * values near the point given and within the maximum distance given.
      * Radius of earth used is 3958.8 miles.
      * @param {String} key The key that the Parse.GeoPoint is stored in.
-     * @param {Parse.GeoPint} point The reference Parse.GeoPoint that is used.
+     * @param {Parse.GeoPoint} point The reference Parse.GeoPoint that is used.
      * @param {Number} maxDistance Maximum distance (in miles) of results to
      *     return.
      * @return {Parse.Query} Returns the query, so you can chain this call.
@@ -5116,7 +5372,7 @@
      * values near the point given and within the maximum distance given.
      * Radius of earth used is 6371.0 kilometers.
      * @param {String} key The key that the Parse.GeoPoint is stored in.
-     * @param {Parse.GeoPint} point The reference Parse.GeoPoint that is used.
+     * @param {Parse.GeoPoint} point The reference Parse.GeoPoint that is used.
      * @param {Number} maxDistance Maximum distance (in kilometers) of results
      *     to return.
      * @return {Parse.Query} Returns the query, so you can chain this call.
@@ -5156,4 +5412,186 @@
       }
     };
   };
+}(this));
+
+/*global FB: false */
+(function(root) {
+  root.Parse = root.Parse || {};
+  var Parse = root.Parse;
+  var _ = Parse._;
+
+  var PUBLIC_KEY = "*";
+  
+  var initialized = false;
+  var requestedPermissions;
+  var provider = {
+    authenticate: function(options) {
+      var self = this;
+      Ti.Facebook.authorize();
+      
+      Ti.Facebook.addEventListener('login', function(response) {
+        
+        if (response.success) 
+        {     
+          if (options.success) 
+          {           
+              options.success(self, {
+                id: response.data.id,
+                access_token: Ti.Facebook.accessToken,
+                expiration_date: Ti.Facebook.expirationDate
+              });
+              
+            }
+        } else {
+          if (options.error) {
+            options.error(self, response);
+          }
+        }
+      });
+      
+      
+      /* FB.login(function(response) {
+        if (response.authResponse) {
+          if (options.success) {
+            options.success(self, {
+              id: response.authResponse.userID,
+              access_token: response.authResponse.accessToken,
+              expiration_date: new Date(response.authResponse.expiresIn * 1000 +
+                  (new Date()).getTime()).toJSON()
+            });
+          }
+        } else {
+          if (options.error) {
+            options.error(self, response);
+          }
+        }
+      }, {
+        scope: requestedPermissions
+      }); */
+    },
+    restoreAuthentication: function(authData) {
+      var authResponse;
+      if (authData) {
+        authResponse = {
+          userID: authData.id,
+          accessToken: authData.access_token,
+          expiresIn: (Parse._parseDate(authData.expiration_date).getTime() -
+              (new Date()).getTime()) / 1000
+        };
+      } else {
+        authResponse = {
+          userID: null,
+          accessToken: null,
+          expiresIn: null
+        };
+      }
+      //FB.Auth.setAuthResponse(authResponse);
+      if (!authData) {
+        Ti.Facebook.logout();
+      }
+      return true;
+    },
+    getAuthType: function() {
+      return "facebook";
+    },
+    deauthenticate: function() {
+      this.restoreAuthentication(null);
+    }
+  };
+
+  /**
+   * Provides a set of utilities for using Parse with Facebook.
+   * @namespace
+   */
+  Parse.FacebookUtils = {
+    /**
+     * Initializes Parse Facebook integration.  Call this function after you
+     * have loaded the Facebook Javascript SDK with the same parameters
+     * as you would pass to<code>
+     * <a href=
+     * "https://developers.facebook.com/docs/reference/javascript/FB.init/">
+     * FB.init()</a></code>.  Parse.FacebookUtils will invoke FB.init() for you
+     * with these arguments.
+     *
+     * @param {Object} options Facebook options argument as described here:
+     *   <a href=
+     *   "https://developers.facebook.com/docs/reference/javascript/FB.init/">
+     *   FB.init()</a>
+     */
+    init: function(options) {
+     /* if (typeof(FB) === 'undefined') {
+        throw "The Javascript Facebook SDK must be loaded before calling init.";
+      }
+      FB.init(options); */
+      Parse.User._registerAuthenticationProvider(provider);
+      initialized = true;
+    },
+    
+    /**
+     * Gets whether the user has their account linked to Facebook.
+     * 
+     * @param {Parse.User} user User to check for a facebook link.
+     *     The user must be logged in on this device.
+     * @return {Boolean} <code>true</code> if the user has their account
+     *     linked to Facebook.
+     */
+    isLinked: function(user) {
+      return user._isLinked("facebook");
+    },
+    
+    /**
+     * Logs in a user using Facebook. This method delegates to the Facebook
+     * SDK to authenticate the user, and then automatically logs in (or
+     * creates, in the case where it is a new user) a Parse.User.
+     * 
+     * @param {String} permissions The permissions required for Facebook
+     *    log in.  This is a comma-separated string of permissions.
+     * @param {Object} options Standard options object with success and error
+     *    callbacks.
+     */
+    logIn: function(permissions, options) {
+      if (!initialized) {
+        throw "You must initialize FacebookUtils before calling logIn.";
+      }
+      Ti.Facebook.permissions = permissions;
+      // requestedPermissions = permissions;
+      return Parse.User._logInWith("facebook", options);
+    },
+    
+    /**
+     * Links Facebook to an existing PFUser. This method delegates to the
+     * Facebook SDK to authenticate the user, and then automatically links
+     * the account to the Parse.User.
+     *
+     * @param {Parse.User} user User to link to Facebook. This must be the
+     *     current user.
+     * @param {String} permissions The permissions required for Facebook
+     *    log in.  This is a comma-separated string of permissions.
+     * @param {Object} options Standard options object with success and error
+     *    callbacks.
+     */
+    link: function(user, permissions, options) {
+      if (!initialized) {
+        throw "You must initialize FacebookUtils before calling link.";
+      }
+      requestedPermissions = permissions;
+      return user._linkWith("facebook", options);
+    },
+    
+    /**
+     * Unlinks the Parse.User from a Facebook account. 
+     * 
+     * @param {Parse.User} user User to unlink from Facebook. This must be the
+     *     current user.
+     * @param {Object} options Standard options object with success and error
+     *    callbacks.
+     */
+    unlink: function(user, options) {
+      if (!initialized) {
+        throw "You must initialize FacebookUtils before calling unlink.";
+      }
+      return user._unlinkFrom("facebook", options);
+    }
+  };
+  
 }(this));
